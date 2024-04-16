@@ -153,7 +153,6 @@ void Input::processEvent(libinput_event *ev)
     case LIBINPUT_EVENT_POINTER_MOTION_ABSOLUTE:
         processAbsMotion(libinput_event_get_pointer_event(ev));
         break;
-    case LIBINPUT_EVENT_POINTER_SCROLL_WHEEL:
     case LIBINPUT_EVENT_POINTER_AXIS:
         processAxis(libinput_event_get_pointer_event(ev));
         break;
