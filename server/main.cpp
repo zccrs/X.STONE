@@ -2,39 +2,22 @@
 // SPDX-License-Identifier: MIT
 
 #include <QCoreApplication>
-#include <QEvent>
-#include <QKeyEvent>
-#include <QDebug>
+#include <QTimer>
 
-#include "output.h"
-#include "input.h"
-
-class InputEventManager : public Input
-{
-public:
-    explicit InputEventManager(QObject *parent = nullptr)
-        : Input(parent) {}
-
-private:
-    bool event(QEvent *event) override {
-        if (event->type() == QEvent::KeyPress) {
-            auto key = static_cast<QKeyEvent*>(event);
-            if (key->key() == Qt::Key_Escape)
-                qApp->quit();
-        }
-
-        return Input::event(event);
-    }
-};
+#include "compositor.h"
 
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
 
-    qDebug() << "Found framebuffer:" << Output::allFrmaebufferFiles();
+    Compositor compositor;
+    compositor.start();
 
-    InputEventManager event;
-    Q_UNUSED(event);
+    QTimer timer;
+    timer.connect(&timer, &QTimer::timeout, [&compositor] {
+        compositor.setBackground(compositor.background() == Qt::red ? Qt::blue : Qt::red);
+    });
+    timer.start(1000);
 
     return app.exec();
 }
