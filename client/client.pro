@@ -1,4 +1,6 @@
-QT       += core gui network
+QT       += core gui remoteobjects
+
+REPC_REPLICA = ../protocols/kernel.rep
 
 SOURCES += \
     main.cpp

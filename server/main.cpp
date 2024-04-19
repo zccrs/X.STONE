@@ -5,6 +5,7 @@
 #include <QTimer>
 
 #include "compositor.h"
+#include "protocol.h"
 
 int main(int argc, char **argv)
 {
@@ -13,11 +14,15 @@ int main(int argc, char **argv)
     Compositor compositor;
     compositor.start();
 
-    QTimer timer;
-    timer.connect(&timer, &QTimer::timeout, [&compositor] {
-        compositor.setBackground(compositor.background() == Qt::red ? Qt::blue : Qt::red);
-    });
-    timer.start(1000);
+    compositor.setBackground(Qt::black);
+    compositor.setWallpaper(QImage("/usr/share/wallpapers/deepin/desktop.jpg"));
+
+    Protocol protocol;
+
+    QObject::connect(&protocol, &Protocol::windowAdded, &compositor, &Compositor::addWindow);
+    QObject::connect(&protocol, &Protocol::windowRemoved, &compositor, &Compositor::removeWindow);
+
+    protocol.start();
 
     return app.exec();
 }

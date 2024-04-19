@@ -3,5 +3,5 @@
 rm -r build
 mkdir build
 cd build
-qmake ..
+qmake6 ..
 make -j8

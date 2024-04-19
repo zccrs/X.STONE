@@ -82,19 +82,79 @@ void Compositor::start()
     for (auto fbFile : fbList)
         m_outputs << new Output(fbFile);
 
+    Q_ASSERT(!m_rootNode);
+    m_rootNode = new Node();
+    m_rootNode->setParent(this);
+
+    connect(m_rootNode, &Node::updateRequest, this, &Compositor::markDirty);
+
     paint();
+}
+
+void Compositor::paint(const QRegion &region)
+{
+    Q_ASSERT(!m_painting);
+    if (m_outputs.isEmpty())
+        return;
+
+    // 多屏采用复制模式，先绘制到第一个屏幕，再复制到其它屏幕
+
+    auto primaryOutput = m_outputs.first();
+    QPainter pa(primaryOutput);
+
+    if (!pa.isActive())
+        return;
+
+    m_painting = true;
+    pa.setBackground(m_background);
+    pa.setBackgroundMode(Qt::OpaqueMode);
+
+    if (!region.isEmpty())
+        pa.setClipRegion(region);
+
+    // 绘制壁纸
+    if (!m_wallpaper.isNull()) {
+        if (m_wallpaperWithPrimaryOutput.isNull()
+            || m_wallpaperWithPrimaryOutput.width() != primaryOutput->width()) {
+            const auto tmpRect = QRect(QPoint(0, 0), primaryOutput->size().scaled(m_wallpaper.size(),
+                                                                                  Qt::KeepAspectRatio));
+            m_wallpaperWithPrimaryOutput = m_wallpaper.copy(tmpRect);
+            m_wallpaperWithPrimaryOutput = m_wallpaperWithPrimaryOutput.scaled(primaryOutput->size(),
+                                                                               Qt::IgnoreAspectRatio,
+                                                                               Qt::SmoothTransformation);
+        }
+
+        pa.drawImage(0, 0, m_wallpaperWithPrimaryOutput);
+    }
+
+    // 绘制窗口
+    m_rootNode->setGeometry(primaryOutput->rect());
+    m_rootNode->paint(&pa);
+    pa.end();
+
+    for (int i = 1; i < m_outputs.count(); ++i) {
+        auto o = m_outputs.at(i);
+
+        pa.begin(o);
+        pa.setBackground(m_background);
+        pa.setBackgroundMode(Qt::OpaqueMode);
+        pa.setCompositionMode(QPainter::CompositionMode_Source);
+        pa.setRenderHint(QPainter::SmoothPixmapTransform);
+
+        QRect targetRect = primaryOutput->rect();
+        // 等比缩放到目标屏幕
+        targetRect.setSize(targetRect.size().scaled(o->size(), Qt::KeepAspectRatio));
+        //  居中显示
+        targetRect.moveCenter(o->rect().center());
+        pa.drawImage(targetRect, *primaryOutput, primaryOutput->rect());
+    }
+
+    m_painting = false;
 }
 
 void Compositor::paint()
 {
-    for (auto output : m_outputs) {
-        if (output->isNull())
-            continue;
-
-        QPainter pa(output);
-        pa.setBrush(QBrush(m_background));
-        pa.drawRect(output->rect());
-    }
+    paint({});
 }
 
 QColor Compositor::background() const
@@ -110,4 +170,131 @@ void Compositor::setBackground(const QColor &newBackground)
     emit backgroundChanged();
 
     paint();
+}
+
+void Compositor::setWallpaper(const QImage &image)
+{
+    m_wallpaper = image;
+    paint();
+}
+
+void Compositor::markDirty(const QRegion &region)
+{
+    if (m_painting)
+        return;
+    paint(region);
+}
+
+void Compositor::addWindow(Window *window)
+{
+    m_rootNode->addChild(window);
+}
+
+void Compositor::removeWindow(Window *window)
+{
+    m_rootNode->removeChild(window);
+}
+
+Node::Node(Node *parent)
+    : QObject(parent)
+{
+
+}
+
+QRect Node::rect() const
+{
+    return QRect(QPoint(0, 0), m_geometry.size());
+}
+
+QRect Node::geometry() const
+{
+    return m_geometry;
+}
+
+void Node::setGeometry(const QRect &newGeometry)
+{
+    if (m_geometry == newGeometry)
+        return;
+    QRegion dirtyRegion;
+    dirtyRegion += m_geometry;
+    dirtyRegion += newGeometry;
+    m_geometry = newGeometry;
+    emit geometryChanged(newGeometry);
+    emit updateRequest(dirtyRegion);
+}
+
+bool Node::isVisible() const
+{
+    return m_visible;
+}
+
+void Node::setVisible(bool newVisible)
+{
+    if (m_visible == newVisible)
+        return;
+    m_visible = newVisible;
+    emit visibleChanged(newVisible);
+
+    updateRequest(geometry());
+}
+
+void Node::paint(QPainter *pa)
+{
+    for (auto child : m_orderedChildren) {
+        if (!child->isVisible())
+            continue;
+
+        pa->save();
+        QTransform tf;
+        pa->setWorldTransform(tf.translate(child->geometry().x(), child->geometry().y()));
+        pa->setClipRect(child->rect(), Qt::IntersectClip);
+        child->paint(pa);
+        pa->restore();
+    }
+}
+
+void Node::addChild(Node *child)
+{
+    Q_ASSERT(!m_orderedChildren.contains(child));
+    m_orderedChildren.append(child);
+
+    connect(child, &Node::updateRequest, this, [this, child] (const QRegion &region) {
+        if (child->isVisible())
+            emit updateRequest(region.translated(geometry().topLeft()));
+    });
+
+    if (child->isVisible())
+        emit updateRequest(child->geometry());
+}
+
+void Node::removeChild(Node *child)
+{
+    m_orderedChildren.removeOne(child);
+    if (child->isVisible())
+        emit updateRequest(child->geometry());
+}
+
+Window::Window(Node *parent)
+    : Node(parent)
+{
+
+}
+
+Window::State Window::state() const
+{
+    return m_state;
+}
+
+void Window::setState(State newState)
+{
+    if (m_state == newState)
+        return;
+    m_state = newState;
+    emit stateChanged();
+    emit updateRequest({});
+}
+
+void Window::paint(QPainter *pa)
+{
+    pa->fillRect(rect(), Qt::blue);
 }

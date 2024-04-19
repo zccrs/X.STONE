@@ -1,0 +1,17 @@
+class Manager
+{
+    SLOT(QString createClient());
+    SLOT(destroyClient(const QString &id));
+};
+
+class Client
+{
+    SLOT(QString createSurface());
+};
+
+#include <QRect>
+class Surface
+{
+    PROP(QRect geometry READWRITE)
+    PROP(bool visible READWRITE)
+}
