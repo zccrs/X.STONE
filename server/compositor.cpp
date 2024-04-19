@@ -22,8 +22,12 @@
 class InputEventManager : public Input
 {
 public:
-    explicit InputEventManager(QObject *parent = nullptr)
+    explicit InputEventManager(Compositor *parent)
         : Input(parent) {}
+
+    inline Compositor *compositor() {
+        return static_cast<Compositor*>(parent());
+    }
 
 private:
     bool event(QEvent *event) override {
@@ -79,12 +83,36 @@ void Compositor::start()
     auto fbList = Output::allFrmaebufferFiles();
     qDebug() << "Found framebuffer:" << fbList;
 
-    for (auto fbFile : fbList)
-        m_outputs << new Output(fbFile);
+    if (fbList.isEmpty()) {
+        qFatal("Not found framebuffer.");
+    }
+
+    for (auto fbFile : fbList) {
+        auto o = new Output(fbFile);
+        if (o->isNull()) {
+            delete o;
+            continue;
+        }
+
+        m_outputs << o;
+    }
+
+    if (m_outputs.isEmpty())
+        qFatal("No valid framebuffer.");
+
+    m_input->setCursorBoundsRect(m_outputs.first()->rect());
 
     Q_ASSERT(!m_rootNode);
     m_rootNode = new Node();
     m_rootNode->setParent(this);
+
+    m_cursorNode = new Cursor(m_rootNode);
+
+    connect(m_input, &Input::cursorPositionChanged, m_cursorNode, [this] {
+        m_cursorNode->move(m_input->cursorPosition());
+    });
+
+    m_input->setCursorPosition(m_outputs.first()->rect().center());
 
     connect(m_rootNode, &Node::updateRequest, this, &Compositor::markDirty);
 
@@ -198,7 +226,8 @@ void Compositor::removeWindow(Window *window)
 Node::Node(Node *parent)
     : QObject(parent)
 {
-
+    if (parent)
+        parent->addChild(this);
 }
 
 QRect Node::rect() const
@@ -263,6 +292,10 @@ void Node::addChild(Node *child)
             emit updateRequest(region.translated(geometry().topLeft()));
     });
 
+    connect(child, &Node::destroyed, this, [this, child] {
+        removeChild(child);
+    });
+
     if (child->isVisible())
         emit updateRequest(child->geometry());
 }
@@ -297,4 +330,24 @@ void Window::setState(State newState)
 void Window::paint(QPainter *pa)
 {
     pa->fillRect(rect(), Qt::blue);
+}
+
+Cursor::Cursor(Node *parent)
+    : Node(parent)
+{
+    if (m_image.load(":/images/cursor.png")) {
+        m_image = m_image.scaledToWidth(48, Qt::SmoothTransformation);
+        setGeometry(m_image.rect());
+        setVisible(true);
+    }
+}
+
+void Cursor::move(const QPoint &pos)
+{
+    setGeometry(QRect(pos, geometry().size()));
+}
+
+void Cursor::paint(QPainter *pa)
+{
+    pa->drawImage(0, 0, m_image);
 }

@@ -21,6 +21,7 @@ class Input : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(QRect cursorBoundsRect READ cursorBoundsRect WRITE setCursorBoundsRect NOTIFY cursorBoundsRectChanged FINAL)
+    Q_PROPERTY(QPoint cursorPosition READ cursorPosition WRITE setCursorPosition NOTIFY cursorPositionChanged FINAL)
 
 public:
     explicit Input(QObject *parent = nullptr);
@@ -30,10 +31,13 @@ public:
     void setCursorBoundsRect(const QRect &newCursorBoundsRect);
     void setCursorPosition(const QPoint &pos);
 
+    QPoint cursorPosition() const;
+
 signals:
     void cursorBoundsRectChanged();
     void pointerDeviceChanged();
     void keyboardDeviceChanged();
+    void cursorPositionChanged();
 
 private:
     void onReadyRead();

@@ -71,10 +71,27 @@ private:
     State m_state;
 };
 
+class Cursor : public Node
+{
+    Q_OBJECT
+public:
+    inline static int zOrder = 999;
+
+    explicit Cursor(Node *parent = nullptr);
+
+    void move(const QPoint &pos);
+
+private:
+    void paint(QPainter *pa);
+
+    QImage m_image;
+};
+
 class Input;
 class Output;
 class Compositor : public QObject
 {
+    friend class InputEventManager;
     Q_OBJECT
     Q_PROPERTY(QColor background READ background WRITE setBackground NOTIFY backgroundChanged FINAL)
 
@@ -111,4 +128,5 @@ private:
     QImage m_wallpaperWithPrimaryOutput;
 
     Node *m_rootNode = nullptr;
+    Cursor *m_cursorNode = nullptr;
 };

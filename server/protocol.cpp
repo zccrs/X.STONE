@@ -178,4 +178,8 @@ void Surface::destroy()
 {
     if (m_client)
         m_client->destroySurface(this);
+    if (m_window) {
+        m_window->deleteLater();
+        m_window = nullptr;
+    }
 }

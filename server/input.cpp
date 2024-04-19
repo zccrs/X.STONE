@@ -202,8 +202,8 @@ void Input::processMotion(libinput_event_pointer *e)
     const double dy = libinput_event_pointer_get_dy(e);
 
     const auto g = m_cursorBoundsRect;
-    m_cursorPos.setX(qBound(g.left(), qRound(m_cursorPos.x() + dx), g.right()));
-    m_cursorPos.setY(qBound(g.top(), qRound(m_cursorPos.y() + dy), g.bottom()));
+    setCursorPosition({qBound(g.left(), qRound(m_cursorPos.x() + dx), g.right()),
+                       qBound(g.top(), qRound(m_cursorPos.y() + dy), g.bottom())});
 
     QMouseEvent event(QEvent::MouseMove, m_cursorPos, Qt::NoButton, m_buttons, m_keyModifiers);
     qApp->sendEvent(this, &event);
@@ -215,8 +215,8 @@ void Input::processAbsMotion(libinput_event_pointer *e)
     const double x = libinput_event_pointer_get_absolute_x_transformed(e, g.width());
     const double y = libinput_event_pointer_get_absolute_y_transformed(e, g.height());
 
-    m_cursorPos.setX(qBound(g.left(), qRound(g.left() + x), g.right()));
-    m_cursorPos.setY(qBound(g.top(), qRound(g.top() + y), g.bottom()));
+    setCursorPosition({qBound(g.left(), qRound(g.left() + x), g.right()),
+                       qBound(g.top(), qRound(g.top() + y), g.bottom())});
 
     QMouseEvent event(QEvent::MouseMove, m_cursorPos, Qt::NoButton, m_buttons, m_keyModifiers);
     qApp->sendEvent(this, &event);
@@ -288,6 +288,20 @@ void Input::setCursorBoundsRect(const QRect &newCursorBoundsRect)
 void Input::setCursorPosition(const QPoint &pos)
 {
     const auto g = m_cursorBoundsRect;
-    m_cursorPos.setX(qBound(g.left(), pos.x(), g.right()));
-    m_cursorPos.setY(qBound(g.top(), pos.y(), g.bottom()));
+
+    QPoint tmp;
+
+    tmp.setX(qBound(g.left(), pos.x(), g.right()));
+    tmp.setY(qBound(g.top(), pos.y(), g.bottom()));
+
+    if (tmp == m_cursorPos)
+        return;
+
+    m_cursorPos = tmp;
+    emit cursorPositionChanged();
+}
+
+QPoint Input::cursorPosition() const
+{
+    return m_cursorPos;
 }

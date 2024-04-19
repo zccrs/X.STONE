@@ -19,6 +19,10 @@ int main(int argc, char **argv)
     auto clientID = manager->createClient();
     clientID.waitForFinished();
 
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, manager.get(), [&] {
+        manager->destroyClient(clientID.returnValue());
+    });
+
     qDebug() << "New Client:" << clientID.returnValue();
 
     std::unique_ptr<ClientReplica> client(node.acquire<ClientReplica>(clientID.returnValue()));

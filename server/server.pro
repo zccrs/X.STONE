@@ -19,3 +19,6 @@ SOURCES += \
     output.cpp \
     protocol.cpp
 
+RESOURCES += \
+    images.qrc
+
