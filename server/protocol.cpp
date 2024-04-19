@@ -6,6 +6,8 @@
 
 #include <QLocalServer>
 #include <QLocalSocket>
+#include <QTimer>
+#include <QTimerEvent>
 
 Protocol::Protocol(QObject *parent)
     : QObject{parent}
@@ -50,11 +52,18 @@ QString Manager::createClient()
     auto client = new Client(parent());
     parent()->m_clients << client;
 
+    connect(client, &Client::disconnected, this, [client, this] {
+        Q_ASSERT(client->parent() == parent());
+        destroyClient(client->objectName());
+    });
+
     return client->objectName();
 }
 
 void Manager::destroyClient(const QString &id)
 {
+    qDebug() << "Destroy client:" << id;
+
     auto client = parent()->findChild<Client*>(id);
     parent()->m_clients.removeOne(client);
 
@@ -76,6 +85,7 @@ Client::Client(Protocol *parent)
 {
     setObjectName(getID(this));
     parent->m_node.enableRemoting(this, objectName());
+    doPing();
 }
 
 Protocol *Client::parent()
@@ -85,7 +95,7 @@ Protocol *Client::parent()
 
 QString Client::createSurface()
 {
-    auto surface = new Surface(new Window(), parent());
+    auto surface = new Surface(new Window(), this, parent());
     surfaces << surface;
 
     emit parent()->windowAdded(surface->m_window);
@@ -93,15 +103,55 @@ QString Client::createSurface()
     return surface->objectName();
 }
 
-Surface::Surface(Window *window, Protocol *parent)
+void Client::doPing()
+{
+    pingTimer = startTimer(std::chrono::seconds(1));
+    emit ClientSource::ping();
+}
+
+void Client::pong()
+{
+    if (pingTimer > 0)
+        killTimer(pingTimer);
+    QTimer::singleShot(std::chrono::seconds(2), this, &Client::doPing);
+}
+
+void Client::destroySurface(Surface *surface)
+{
+    Q_ASSERT(surface);
+    surfaces.removeOne(surface);
+    emit parent()->windowRemoved(surface->m_window);
+    surface->m_client = nullptr;
+    surface->deleteLater();
+}
+
+void Client::timerEvent(QTimerEvent *event)
+{
+    if (event->timerId() == pingTimer) {
+        killTimer(pingTimer);
+        pingTimer = 0;
+        emit disconnected();
+        return;
+    }
+
+    ClientSource::timerEvent(event);
+}
+
+Surface::Surface(Window *window, Client *client, Protocol *parent)
     : SurfaceSource(parent)
     , m_window(window)
+    , m_client(client)
 {
     connect(window, &Window::geometryChanged, this, &Surface::geometryChanged);
     connect(window, &Window::visibleChanged, this, &Surface::visibleChanged);
 
     setObjectName(getID(this));
     parent->m_node.enableRemoting(this, objectName());
+}
+
+Surface::~Surface()
+{
+    destroy();
 }
 
 QRect Surface::geometry() const
@@ -122,4 +172,10 @@ bool Surface::visible() const
 void Surface::setVisible(bool visible)
 {
     m_window->setVisible(visible);
+}
+
+void Surface::destroy()
+{
+    if (m_client)
+        m_client->destroySurface(this);
 }

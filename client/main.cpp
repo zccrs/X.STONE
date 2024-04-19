@@ -9,8 +9,6 @@
 
 int main(int argc, char **argv)
 {
-    QLoggingCategory::setFilterRules("qt.remoteobjects.*=true");
-
     QCoreApplication app(argc, argv);
 
     QRemoteObjectNode node;
@@ -24,7 +22,10 @@ int main(int argc, char **argv)
     qDebug() << "New Client:" << clientID.returnValue();
 
     std::unique_ptr<ClientReplica> client(node.acquire<ClientReplica>(clientID.returnValue()));
+    QObject::connect(client.get(), &ClientReplica::ping, client.get(), &ClientReplica::pong);
+
     client->waitForSource();
+    client->pong();
 
     auto surfaceID = client->createSurface();
     surfaceID.waitForFinished();

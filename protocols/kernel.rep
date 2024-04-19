@@ -7,11 +7,14 @@ class Manager
 class Client
 {
     SLOT(QString createSurface());
+    SIGNAL(ping());
+    SLOT(pong());
 };
 
 #include <QRect>
 class Surface
 {
-    PROP(QRect geometry READWRITE)
-    PROP(bool visible READWRITE)
+    PROP(QRect geometry READWRITE);
+    PROP(bool visible READWRITE);
+    SLOT(destroy());
 }
