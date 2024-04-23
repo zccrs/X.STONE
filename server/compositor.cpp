@@ -100,7 +100,8 @@ void Compositor::start()
     if (m_outputs.isEmpty())
         qFatal("No valid framebuffer.");
 
-    m_input->setCursorBoundsRect(m_outputs.first()->rect());
+    auto primaryOutput = m_outputs.first();
+    m_input->setCursorBoundsRect(primaryOutput->rect());
 
     Q_ASSERT(!m_rootNode);
     m_rootNode = new RootNode(this);
@@ -113,6 +114,11 @@ void Compositor::start()
     });
 
     m_input->setCursorPosition(m_outputs.first()->rect().center());
+    m_buffer = *primaryOutput;
+    m_buffer.detach();
+
+    if (!primaryOutput->isNull())
+        Q_ASSERT(!m_buffer.isNull());
 
     paint();
 }
@@ -123,11 +129,10 @@ void Compositor::paint(const QRegion &region)
     if (m_outputs.isEmpty())
         return;
 
-    // 多屏采用复制模式，先绘制到第一个屏幕，再复制到其它屏幕
+    if (m_buffer.isNull())
+        return;
 
-    auto primaryOutput = m_outputs.first();
-    QPainter pa(primaryOutput);
-
+    QPainter pa(&m_buffer);
     if (!pa.isActive())
         return;
 
@@ -141,26 +146,34 @@ void Compositor::paint(const QRegion &region)
     // 绘制壁纸
     if (!m_wallpaper.isNull()) {
         if (m_wallpaperWithPrimaryOutput.isNull()
-            || m_wallpaperWithPrimaryOutput.width() != primaryOutput->width()) {
-            const auto tmpRect = QRect(QPoint(0, 0), primaryOutput->size().scaled(m_wallpaper.size(),
+            || m_wallpaperWithPrimaryOutput.width() != m_buffer.width()) {
+            const auto tmpRect = QRect(QPoint(0, 0), m_buffer.size().scaled(m_wallpaper.size(),
                                                                                   Qt::KeepAspectRatio));
             m_wallpaperWithPrimaryOutput = m_wallpaper.copy(tmpRect);
-            m_wallpaperWithPrimaryOutput = m_wallpaperWithPrimaryOutput.scaled(primaryOutput->size(),
+            m_wallpaperWithPrimaryOutput = m_wallpaperWithPrimaryOutput.scaled(m_buffer.size(),
                                                                                Qt::IgnoreAspectRatio,
                                                                                Qt::SmoothTransformation);
         }
 
-        pa.drawImage(0, 0, m_wallpaperWithPrimaryOutput);
     }
 
+    pa.drawImage(0, 0, m_wallpaperWithPrimaryOutput);
     pa.setBackgroundMode(Qt::TransparentMode);
+
     // 绘制窗口
-    m_rootNode->setGeometry(primaryOutput->rect());
-    m_rootNode->paint(&pa);
+    m_rootNode->setGeometry(m_buffer.rect());
+    m_rootNode->draw(&pa);
     pa.end();
 
-    for (int i = 1; i < m_outputs.count(); ++i) {
+    // for debug
+    // int i = 0;
+    // m_buffer.save(QString("/tmp/zccrs/%1.png").arg(++i));
+
+    // 送显
+    for (int i = 0; i < m_outputs.count(); ++i) {
         auto o = m_outputs.at(i);
+        if (!o->waitForVSync())
+            continue;
 
         pa.begin(o);
         pa.setBackground(m_background);
@@ -168,12 +181,22 @@ void Compositor::paint(const QRegion &region)
         pa.setCompositionMode(QPainter::CompositionMode_Source);
         pa.setRenderHint(QPainter::SmoothPixmapTransform);
 
-        QRect targetRect = primaryOutput->rect();
+        QRectF targetRect = m_buffer.rect();
         // 等比缩放到目标屏幕
         targetRect.setSize(targetRect.size().scaled(o->size(), Qt::KeepAspectRatio));
         //  居中显示
         targetRect.moveCenter(o->rect().center());
-        pa.drawImage(targetRect, *primaryOutput, primaryOutput->rect());
+
+        if (region.isEmpty()) {
+            pa.drawImage(targetRect, m_buffer, m_buffer.rect());
+        } else {
+            QTransform mapToOutput;
+            mapToOutput.scale(targetRect.width() / m_buffer.width(), targetRect.height() / m_buffer.height());
+            mapToOutput.translate(targetRect.x(), targetRect.y());
+
+            for (const QRect &r : region)
+                pa.drawImage(mapToOutput.mapRect(r), m_buffer, r);
+        }
     }
 
     m_painting = false;
@@ -306,19 +329,36 @@ void Node::setZ(int newZ)
     emit zChanged();
 }
 
+void Node::draw(QPainter *pa)
+{
+    if (!isVisible())
+        return;
+
+    pa->save();
+    QTransform tf;
+    pa->setWorldTransform(tf.translate(geometry().x(), geometry().y()), true);
+    auto worldTransform = pa->worldTransform();
+
+    pa->setClipRect(rect(), Qt::IntersectClip);
+    paint(pa);
+    pa->restore();
+
+    if (m_orderedChildren.isEmpty())
+        return;
+
+    auto oldWorldTransform = pa->worldTransform();
+    pa->setWorldTransform(worldTransform, false);
+
+    for (auto child : m_orderedChildren) {
+        child->draw(pa);
+    }
+
+    pa->setWorldTransform(oldWorldTransform, false);
+}
+
 void Node::paint(QPainter *pa)
 {
-    for (auto child : m_orderedChildren) {
-        if (!child->isVisible())
-            continue;
-
-        pa->save();
-        QTransform tf;
-        pa->setWorldTransform(tf.translate(child->geometry().x(), child->geometry().y()), true);
-        pa->setClipRect(child->rect(), Qt::ReplaceClip);
-        child->paint(pa);
-        pa->restore();
-    }
+    Q_UNUSED(pa);
 }
 
 void Node::update(QRegion region)
@@ -437,15 +477,7 @@ void Window::setState(State newState)
 
 void Window::paint(QPainter *pa)
 {
-    { // draw titlebar
-        QRect titlebarGeometry(0, 0, geometry().width(), 35);
-        titlebarGeometry.moveBottomLeft(QPoint(0, 0));
-
-        pa->fillRect(titlebarGeometry, Qt::white);
-    }
-
     pa->fillRect(rect(), Qt::blue);
-    Node::paint(pa);
 }
 
 void Window::updateTitleBarGeometry()
@@ -482,7 +514,6 @@ void Rectangle::setColor(const QColor &newColor)
 void Rectangle::paint(QPainter *pa)
 {
     pa->fillRect(rect(), m_color);
-    Node::paint(pa);
 }
 
 WindowTitleBar::WindowTitleBar(Window *window)
@@ -516,7 +547,6 @@ void WindowTitleBar::updateButtonGeometry()
 void WindowTitleBar::paint(QPainter *pa)
 {
     pa->fillRect(rect(), Qt::white);
-    Node::paint(pa);
 }
 
 Cursor::Cursor(Node *parent)

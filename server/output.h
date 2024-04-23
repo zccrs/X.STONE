@@ -4,6 +4,7 @@
 #pragma once
 
 #include <QImage>
+#include <QFile>
 
 class Output : public QImage
 {
@@ -13,10 +14,13 @@ public:
 
     static QStringList allFrmaebufferFiles();
 
+    bool waitForVSync();
+
 private:
     void init(const QString &fbFile);
 
     int metric(PaintDeviceMetric metric) const override;
 
+    QFile m_fbFile;
     quint32 m_widthMM, m_heightMM;
 };

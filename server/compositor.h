@@ -38,6 +38,8 @@ public:
     int z() const;
     void setZ(int newZ);
 
+    void draw(QPainter *pa);
+
 signals:
     void geometryChanged(QRect oldGeometry, QRect newGeometry);
     void visibleChanged(bool newVisible);
@@ -178,6 +180,7 @@ private:
     Input *m_input = nullptr;
     QList<Output*> m_outputs;
 
+    QImage m_buffer;
     bool m_painting = false;
     QColor m_background;
     QImage m_wallpaper;

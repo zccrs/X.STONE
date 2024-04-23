@@ -5,7 +5,7 @@
 
 #include <QDir>
 #include <QFile>
-#include <QPixelFormat>
+#include <QThread>
 #include <QDebug>
 
 #include <fcntl.h>
@@ -41,17 +41,33 @@ QStringList Output::allFrmaebufferFiles()
     return files;
 }
 
+bool Output::waitForVSync()
+{
+    if (!m_fbFile.isOpen())
+        return true;
+
+    auto fb_fd = m_fbFile.handle();
+
+    while (true) {
+        struct fb_vblank vblank;
+        if (ioctl(fb_fd, FBIO_WAITFORVSYNC, &vblank) == 0)
+            return true;
+    }
+
+    return false;
+}
+
 void Output::init(const QString &fbFile)
 {
     qDebug() << "Init framebuffer" << fbFile;
-    QFile file(fbFile);
+    m_fbFile.setFileName(fbFile);
 
-    if (!file.open(QIODevice::ReadWrite)) {
-        qWarning() << "Can't open file:" << file.errorString();
+    if (!m_fbFile.open(QIODevice::ReadWrite)) {
+        qWarning() << "Can't open file:" << m_fbFile.errorString();
         return;
     }
 
-    auto fb_fd = file.handle();
+    auto fb_fd = m_fbFile.handle();
 
     struct fb_var_screeninfo vinfo;
     if (ioctl(fb_fd, FBIOGET_VSCREENINFO, &vinfo) == -1) {
