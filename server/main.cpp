@@ -1,7 +1,7 @@
 // Copyright (C) 2024 JiDe Zhang <zhangjide@deepin.org>.
 // SPDX-License-Identifier: MIT
 
-#include <QCoreApplication>
+#include <QGuiApplication>
 #include <QTimer>
 
 #include "compositor.h"
@@ -9,7 +9,8 @@
 
 int main(int argc, char **argv)
 {
-    QCoreApplication app(argc, argv);
+    qputenv("QT_QPA_PLATFORM", "offscreen");
+    QGuiApplication app(argc, argv);
 
     Compositor compositor;
     compositor.start();

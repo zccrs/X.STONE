@@ -198,10 +198,13 @@ void Input::processButton(libinput_event_pointer *e)
 
 void Input::processMotion(libinput_event_pointer *e)
 {
+    const auto g = m_cursorBoundsRect;
+    if (g.isEmpty())
+        return;
+
     const double dx = libinput_event_pointer_get_dx(e);
     const double dy = libinput_event_pointer_get_dy(e);
 
-    const auto g = m_cursorBoundsRect;
     setCursorPosition({qBound(g.left(), qRound(m_cursorPos.x() + dx), g.right()),
                        qBound(g.top(), qRound(m_cursorPos.y() + dy), g.bottom())});
 
@@ -212,6 +215,9 @@ void Input::processMotion(libinput_event_pointer *e)
 void Input::processAbsMotion(libinput_event_pointer *e)
 {
     const auto g = m_cursorBoundsRect;
+    if (g.isEmpty())
+        return;
+
     const double x = libinput_event_pointer_get_absolute_x_transformed(e, g.width());
     const double y = libinput_event_pointer_get_absolute_y_transformed(e, g.height());
 
@@ -291,8 +297,12 @@ void Input::setCursorPosition(const QPoint &pos)
 
     QPoint tmp;
 
-    tmp.setX(qBound(g.left(), pos.x(), g.right()));
-    tmp.setY(qBound(g.top(), pos.y(), g.bottom()));
+    if (g.isEmpty()) {
+        tmp = pos;
+    } else {
+        tmp.setX(qBound(g.left(), pos.x(), g.right()));
+        tmp.setY(qBound(g.top(), pos.y(), g.bottom()));
+    }
 
     if (tmp == m_cursorPos)
         return;

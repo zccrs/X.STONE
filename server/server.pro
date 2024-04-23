@@ -1,4 +1,4 @@
-QT       += core gui remoteobjects core-private fb_support-private
+QT       += gui remoteobjects core-private fb_support-private
 equals(QT_MAJOR_VERSION, 5): QT += xkbcommon_support-private
 
 CONFIG += link_pkgconfig

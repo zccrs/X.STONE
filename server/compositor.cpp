@@ -54,7 +54,7 @@ static bool setConsoleMode(int mode)
         } else {
             ok = true;
         }
-        // close(tty_fd);
+        close(console_fd);
     }
 
     return ok;
@@ -103,8 +103,7 @@ void Compositor::start()
     m_input->setCursorBoundsRect(m_outputs.first()->rect());
 
     Q_ASSERT(!m_rootNode);
-    m_rootNode = new Node();
-    m_rootNode->setParent(this);
+    m_rootNode = new RootNode(this);
 
     m_cursorNode = new Cursor(m_rootNode);
 
@@ -113,8 +112,6 @@ void Compositor::start()
     });
 
     m_input->setCursorPosition(m_outputs.first()->rect().center());
-
-    connect(m_rootNode, &Node::updateRequest, this, &Compositor::markDirty);
 
     paint();
 }
@@ -155,6 +152,7 @@ void Compositor::paint(const QRegion &region)
         pa.drawImage(0, 0, m_wallpaperWithPrimaryOutput);
     }
 
+    pa.setBackgroundMode(Qt::TransparentMode);
     // 绘制窗口
     m_rootNode->setGeometry(primaryOutput->rect());
     m_rootNode->paint(&pa);
@@ -208,6 +206,8 @@ void Compositor::setWallpaper(const QImage &image)
 
 void Compositor::markDirty(const QRegion &region)
 {
+    qDebug() << "Dirty" << region;
+
     if (m_painting)
         return;
     paint(region);
@@ -230,6 +230,11 @@ Node::Node(Node *parent)
         parent->addChild(this);
 }
 
+Node::~Node()
+{
+
+}
+
 QRect Node::rect() const
 {
     return QRect(QPoint(0, 0), m_geometry.size());
@@ -244,12 +249,32 @@ void Node::setGeometry(const QRect &newGeometry)
 {
     if (m_geometry == newGeometry)
         return;
-    QRegion dirtyRegion;
-    dirtyRegion += m_geometry;
-    dirtyRegion += newGeometry;
+    auto oldGeometry = m_geometry;
     m_geometry = newGeometry;
-    emit geometryChanged(newGeometry);
-    emit updateRequest(dirtyRegion);
+    emit geometryChanged(oldGeometry, newGeometry);
+}
+
+// 包括 child node 的 geometry
+QRegion Node::wholeGeometry() const
+{
+    QRegion region;
+    region += geometry();
+
+    for (auto child : m_orderedChildren)
+        region += child->wholeGeometry().translated(geometry().topLeft());
+
+    return region;
+}
+
+QRegion Node::wholeRect() const
+{
+    QRegion region;
+    region += rect();
+
+    for (auto child : m_orderedChildren)
+        region += child->wholeGeometry();
+
+    return region;
 }
 
 bool Node::isVisible() const
@@ -264,7 +289,7 @@ void Node::setVisible(bool newVisible)
     m_visible = newVisible;
     emit visibleChanged(newVisible);
 
-    updateRequest(geometry());
+    update(wholeRect());
 }
 
 void Node::paint(QPainter *pa)
@@ -275,42 +300,65 @@ void Node::paint(QPainter *pa)
 
         pa->save();
         QTransform tf;
-        pa->setWorldTransform(tf.translate(child->geometry().x(), child->geometry().y()));
-        pa->setClipRect(child->rect(), Qt::IntersectClip);
+        pa->setWorldTransform(tf.translate(child->geometry().x(), child->geometry().y()), true);
+        pa->setClipRect(child->rect(), Qt::ReplaceClip);
         child->paint(pa);
         pa->restore();
     }
 }
 
+void Node::update(QRegion region)
+{
+    if (!isVisible())
+        return;
+
+    qDebug() << this << "request update" << region;
+
+    if (auto parentNode = qobject_cast<Node*>(parent()))
+        parentNode->update(region.translated(geometry().topLeft()));
+}
+
 void Node::addChild(Node *child)
 {
+    qDebug() << "Add child" << child << "to" << this;
+
     Q_ASSERT(!m_orderedChildren.contains(child));
     m_orderedChildren.append(child);
-
-    connect(child, &Node::updateRequest, this, [this, child] (const QRegion &region) {
-        if (child->isVisible())
-            emit updateRequest(region.translated(geometry().topLeft()));
-    });
 
     connect(child, &Node::destroyed, this, [this, child] {
         removeChild(child);
     });
 
+    connect(child, &Node::geometryChanged, this, [this, child] (QRect oldGeo, QRect newGeo) {
+        if (!child->isVisible())
+            return;
+
+        QPoint positionDiff = oldGeo.topLeft() - newGeo.topLeft();
+        QRegion dirtyRegion = child->wholeGeometry();
+        dirtyRegion += dirtyRegion.translated(positionDiff);
+        update(dirtyRegion);
+    });
+
     if (child->isVisible())
-        emit updateRequest(child->geometry());
+        update(child->wholeGeometry());
 }
 
 void Node::removeChild(Node *child)
 {
+    qDebug() << "Remove child" << child << "from" << this;
+
+    child->disconnect(this);
     m_orderedChildren.removeOne(child);
     if (child->isVisible())
-        emit updateRequest(child->geometry());
+        update(child->wholeGeometry());
 }
 
 Window::Window(Node *parent)
     : Node(parent)
+    , m_titlebar(new WindowTitleBar(this))
 {
-
+    connect(this, &Window::geometryChanged, this, &Window::updateTitleBarGeometry);
+    updateTitleBarGeometry();
 }
 
 Window::State Window::state() const
@@ -324,12 +372,91 @@ void Window::setState(State newState)
         return;
     m_state = newState;
     emit stateChanged();
-    emit updateRequest({});
+    update(rect());
 }
 
 void Window::paint(QPainter *pa)
 {
+    { // draw titlebar
+        QRect titlebarGeometry(0, 0, geometry().width(), 35);
+        titlebarGeometry.moveBottomLeft(QPoint(0, 0));
+
+        pa->fillRect(titlebarGeometry, Qt::white);
+    }
+
     pa->fillRect(rect(), Qt::blue);
+    Node::paint(pa);
+}
+
+void Window::updateTitleBarGeometry()
+{
+    QRect rect = this->rect();
+
+    rect.setHeight(35);
+    // 标题栏显示在窗口上方
+    rect.moveBottomLeft(QPoint(0, 0));
+
+    m_titlebar->setGeometry(rect);
+}
+
+Rectangle::Rectangle(Node *parent)
+    : Node(parent)
+{
+
+}
+
+QColor Rectangle::color() const
+{
+    return m_color;
+}
+
+void Rectangle::setColor(const QColor &newColor)
+{
+    if (m_color == newColor)
+        return;
+    m_color = newColor;
+    emit colorChanged();
+    update(rect());
+}
+
+void Rectangle::paint(QPainter *pa)
+{
+    pa->fillRect(rect(), m_color);
+    Node::paint(pa);
+}
+
+WindowTitleBar::WindowTitleBar(Window *window)
+    : Node(window)
+    , m_maximizeButton(new Rectangle(this))
+    , m_minimizeButton(new Rectangle(this))
+    , m_closeButton(new Rectangle(this))
+{
+    m_maximizeButton->setColor(Qt::green);
+    m_minimizeButton->setColor(Qt::yellow);
+    m_closeButton->setColor(Qt::red);
+    connect(this, &WindowTitleBar::geometryChanged, this, &WindowTitleBar::updateButtonGeometry);
+    updateButtonGeometry();
+}
+
+void WindowTitleBar::updateButtonGeometry()
+{
+    const auto rect = this->rect();
+
+    QRect buttonGeometry = QRect(0, 0, rect.height(), rect.height());
+    buttonGeometry.moveTopRight(rect.topRight());
+    m_closeButton->setGeometry(buttonGeometry);
+
+    buttonGeometry.moveTopRight(buttonGeometry.topLeft());
+    m_maximizeButton->setGeometry(buttonGeometry);
+
+    buttonGeometry.moveTopRight(buttonGeometry.topLeft());
+    m_minimizeButton->setGeometry(buttonGeometry);
+}
+
+void WindowTitleBar::paint(QPainter *pa)
+{
+    pa->fillRect(rect(), Qt::white);
+    Node::paint(pa);
 }
 
 Cursor::Cursor(Node *parent)
@@ -338,7 +465,6 @@ Cursor::Cursor(Node *parent)
     if (m_image.load(":/images/cursor.png")) {
         m_image = m_image.scaledToWidth(48, Qt::SmoothTransformation);
         setGeometry(m_image.rect());
-        setVisible(true);
     }
 }
 
@@ -350,4 +476,10 @@ void Cursor::move(const QPoint &pos)
 void Cursor::paint(QPainter *pa)
 {
     pa->drawImage(0, 0, m_image);
+}
+
+Compositor::RootNode::RootNode(Compositor *compositor)
+    : Node(nullptr)
+{
+    setParent(compositor);
 }

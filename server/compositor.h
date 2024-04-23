@@ -22,30 +22,36 @@ class Node : public QObject
 
 public:
     explicit Node(Node *parent = nullptr);
+    ~Node();
 
     QRect rect() const;
     QRect geometry() const;
     void setGeometry(const QRect &newGeometry);
 
+    QRegion wholeGeometry() const;
+    QRegion wholeRect() const;
+
     bool isVisible() const;
     void setVisible(bool newVisible);
 
 signals:
-    void geometryChanged(QRect newGeometry);
-    void updateRequest(QRegion region);
+    void geometryChanged(QRect oldGeometry, QRect newGeometry);
     void visibleChanged(bool newVisible);
 
 protected:
     virtual void paint(QPainter *pa);
+    virtual void update(QRegion region);
+
     void addChild(Node *child);
     void removeChild(Node *child);
 
 private:
     QRect m_geometry = QRect(0, 0, 100, 100);
     QList<Node*> m_orderedChildren;
-    bool m_visible = false;
+    bool m_visible = true;
 };
 
+class WindowTitleBar;
 class Window : public Node
 {
     Q_OBJECT
@@ -67,8 +73,51 @@ signals:
 
 private:
     void paint(QPainter *pa) override;
+    void updateTitleBarGeometry();
 
     State m_state;
+    WindowTitleBar *m_titlebar;
+};
+
+class Rectangle : public Node
+{
+    Q_OBJECT
+    Q_PROPERTY(QColor color READ color WRITE setColor NOTIFY colorChanged FINAL)
+
+public:
+    explicit Rectangle(Node *parent = nullptr);
+
+    QColor color() const;
+    void setColor(const QColor &newColor);
+
+signals:
+    void colorChanged();
+
+private:
+    void paint(QPainter *pa) override;
+
+private:
+    QColor m_color;
+};
+
+class WindowTitleBar: public Node
+{
+    Q_OBJECT
+
+public:
+    explicit WindowTitleBar(Window *window);
+
+    inline Window *window() {
+        return static_cast<Window*>(parent());
+    }
+
+private:
+    void updateButtonGeometry();
+    void paint(QPainter *pa) override;
+
+    Rectangle *m_maximizeButton;
+    Rectangle *m_minimizeButton;
+    Rectangle *m_closeButton;
 };
 
 class Cursor : public Node
@@ -126,6 +175,20 @@ private:
     QColor m_background;
     QImage m_wallpaper;
     QImage m_wallpaperWithPrimaryOutput;
+
+    class RootNode : public Node
+    {
+    public:
+        explicit RootNode(Compositor *compositor);
+
+        inline Compositor *parent() {
+            return static_cast<Compositor*>(Node::parent());
+        }
+
+        void update(QRegion region) {
+            parent()->markDirty(region);
+        }
+    };
 
     Node *m_rootNode = nullptr;
     Cursor *m_cursorNode = nullptr;
