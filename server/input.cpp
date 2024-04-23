@@ -192,7 +192,7 @@ void Input::processButton(libinput_event_pointer *e)
     m_buttons.setFlag(button, pressed);
 
     QEvent::Type type = pressed ? QEvent::MouseButtonPress : QEvent::MouseButtonRelease;
-    QMouseEvent event(type, m_cursorPos, button, m_buttons, m_keyModifiers);
+    QMouseEvent event(type, m_cursorPos, m_cursorPos, button, m_buttons, m_keyModifiers);
     qApp->sendEvent(this, &event);
 }
 
@@ -208,7 +208,7 @@ void Input::processMotion(libinput_event_pointer *e)
     setCursorPosition({qBound(g.left(), qRound(m_cursorPos.x() + dx), g.right()),
                        qBound(g.top(), qRound(m_cursorPos.y() + dy), g.bottom())});
 
-    QMouseEvent event(QEvent::MouseMove, m_cursorPos, Qt::NoButton, m_buttons, m_keyModifiers);
+    QMouseEvent event(QEvent::MouseMove, m_cursorPos, m_cursorPos, Qt::NoButton, m_buttons, m_keyModifiers);
     qApp->sendEvent(this, &event);
 }
 
@@ -224,7 +224,7 @@ void Input::processAbsMotion(libinput_event_pointer *e)
     setCursorPosition({qBound(g.left(), qRound(g.left() + x), g.right()),
                        qBound(g.top(), qRound(g.top() + y), g.bottom())});
 
-    QMouseEvent event(QEvent::MouseMove, m_cursorPos, Qt::NoButton, m_buttons, m_keyModifiers);
+    QMouseEvent event(QEvent::MouseMove, m_cursorPos, m_cursorPos, Qt::NoButton, m_buttons, m_keyModifiers);
     qApp->sendEvent(this, &event);
 }
 

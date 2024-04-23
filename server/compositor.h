@@ -7,6 +7,7 @@
 #include <QColor>
 #include <QRect>
 #include <QImage>
+#include <QPointer>
 
 QT_BEGIN_NAMESPACE
 class QFbVtHandler;
@@ -40,14 +41,22 @@ public:
 
     void draw(QPainter *pa);
 
+    Node *parentNode() const;
+    Node *childAt(const QPoint &position) const;
+    QPoint mapFromGlobal(const QPoint &position) const;
+    QPoint mapToGlobal(const QPoint &position) const;
+
 signals:
     void geometryChanged(QRect oldGeometry, QRect newGeometry);
     void visibleChanged(bool newVisible);
     void zChanged();
 
+    void mousePressed(QPoint pos);
+
 protected:
     virtual void paint(QPainter *pa);
-    virtual void update(QRegion region);
+    virtual void update(QRegion region, bool force = false);
+    bool event(QEvent *event) override;
 
     void addChild(Node *child);
     void removeChild(Node *child);
@@ -55,6 +64,7 @@ protected:
 
 private:
     QRect m_geometry = QRect(0, 0, 100, 100);
+    QPointer<Node> m_parent;
     QList<Node*> m_orderedChildren;
     bool m_visible = true;
     int m_z = 0;
@@ -119,6 +129,11 @@ public:
     inline Window *window() {
         return static_cast<Window*>(parent());
     }
+
+signals:
+    void requestClose();
+    void requestToggleMaximize();
+    void requestMinimize();
 
 private:
     void updateButtonGeometry();
@@ -195,11 +210,12 @@ private:
             return static_cast<Compositor*>(Node::parent());
         }
 
-        void update(QRegion region) {
+        void update(QRegion region, bool) override {
             parent()->markDirty(region);
         }
     };
 
     Node *m_rootNode = nullptr;
     Cursor *m_cursorNode = nullptr;
+    QPointer<Window> m_focusWindow;
 };

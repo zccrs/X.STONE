@@ -31,10 +31,37 @@ public:
 
 private:
     bool event(QEvent *event) override {
-        if (event->type() == QEvent::KeyPress) {
+        switch (event->type()) {
+        case QEvent::KeyPress: {
             auto key = static_cast<QKeyEvent*>(event);
             if (key->key() == Qt::Key_Escape)
                 qApp->quit();
+            Q_FALLTHROUGH();
+        }
+        case QEvent::KeyRelease: {
+            if (compositor()->m_focusWindow)
+                qApp->sendEvent(compositor()->m_focusWindow.get(), event);
+            break;
+        }
+        case QEvent::MouseButtonPress: Q_FALLTHROUGH();
+        case QEvent::MouseButtonRelease: Q_FALLTHROUGH();
+        case QEvent::MouseMove: {
+            auto mouseEvent = static_cast<QMouseEvent*>(event);
+            const auto globalPos = mouseEvent->globalPosition().toPoint();
+            auto node = compositor()->m_rootNode->childAt(globalPos);
+
+            if (node) {
+                QMouseEvent newEvent(event->type(),
+                                     node->mapFromGlobal(globalPos),
+                                     globalPos,
+                                     mouseEvent->button(),
+                                     mouseEvent->buttons(),
+                                     mouseEvent->modifiers());
+                return qApp->sendEvent(node, &newEvent);
+            }
+            break;
+        }
+        default: break;
         }
 
         return Input::event(event);
@@ -181,7 +208,7 @@ void Compositor::paint(const QRegion &region)
         pa.setCompositionMode(QPainter::CompositionMode_Source);
         pa.setRenderHint(QPainter::SmoothPixmapTransform);
 
-        QRectF targetRect = m_buffer.rect();
+        QRect targetRect = m_buffer.rect();
         // 等比缩放到目标屏幕
         targetRect.setSize(targetRect.size().scaled(o->size(), Qt::KeepAspectRatio));
         //  居中显示
@@ -191,11 +218,13 @@ void Compositor::paint(const QRegion &region)
             pa.drawImage(targetRect, m_buffer, m_buffer.rect());
         } else {
             QTransform mapToOutput;
-            mapToOutput.scale(targetRect.width() / m_buffer.width(), targetRect.height() / m_buffer.height());
+            mapToOutput.scale(qreal(targetRect.width()) / m_buffer.width(),
+                              qreal(targetRect.height()) / m_buffer.height());
             mapToOutput.translate(targetRect.x(), targetRect.y());
 
-            for (const QRect &r : region)
+            for (const QRect &r : region) {
                 pa.drawImage(mapToOutput.mapRect(r), m_buffer, r);
+            }
         }
     }
 
@@ -313,7 +342,7 @@ void Node::setVisible(bool newVisible)
     m_visible = newVisible;
     emit visibleChanged(newVisible);
 
-    update(wholeRect());
+    update(wholeRect(), true);
 }
 
 int Node::z() const
@@ -356,20 +385,67 @@ void Node::draw(QPainter *pa)
     pa->setWorldTransform(oldWorldTransform, false);
 }
 
+Node *Node::parentNode() const
+{
+    return m_parent;
+}
+
+Node *Node::childAt(const QPoint &position) const
+{
+    for (int i = m_orderedChildren.count() - 1; i >= 0; --i) {
+        Node *child = m_orderedChildren.at(i);
+        // 排除光标
+        if (qobject_cast<Cursor*>(child))
+            continue;
+
+        if (auto node = child->childAt(position - child->geometry().topLeft()))
+            return node;
+
+        if (child->geometry().contains(position, true))
+            return child;
+    }
+
+    return nullptr;
+}
+
+QPoint Node::mapFromGlobal(const QPoint &position) const
+{
+    if (auto parent = parentNode())
+        return parent->mapFromGlobal(position) - geometry().topLeft();
+    return position - geometry().topLeft();
+}
+
+QPoint Node::mapToGlobal(const QPoint &position) const
+{
+    if (auto parent = parentNode())
+        return parent->mapToGlobal(position) + geometry().topLeft();
+    return position + geometry().topLeft();
+}
+
 void Node::paint(QPainter *pa)
 {
     Q_UNUSED(pa);
 }
 
-void Node::update(QRegion region)
+void Node::update(QRegion region, bool force)
 {
-    if (!isVisible())
+    if (!isVisible() && !force)
         return;
 
     qDebug() << this << "request update" << region;
 
-    if (auto parentNode = qobject_cast<Node*>(parent()))
+    if (auto parentNode = this->parentNode())
         parentNode->update(region.translated(geometry().topLeft()));
+}
+
+bool Node::event(QEvent *event)
+{
+    if (event->type() == QEvent::MouseButtonPress) {
+        emit mousePressed(static_cast<QMouseEvent*>(event)->position().toPoint());
+        return true;
+    }
+
+    return QObject::event(event);
 }
 
 void Node::addChild(Node *child)
@@ -378,6 +454,7 @@ void Node::addChild(Node *child)
 
     Q_ASSERT(!m_orderedChildren.contains(child));
     m_orderedChildren.append(child);
+    child->m_parent = this;
     sortChild(child);
 
     connect(child, &Node::destroyed, this, [this, child] {
@@ -407,6 +484,7 @@ void Node::removeChild(Node *child)
     qDebug() << "Remove child" << child << "from" << this;
 
     child->disconnect(this);
+    child->m_parent = nullptr;
     m_orderedChildren.removeOne(child);
     if (child->isVisible())
         update(child->wholeGeometry());
@@ -458,6 +536,9 @@ Window::Window(Node *parent)
     , m_titlebar(new WindowTitleBar(this))
 {
     connect(this, &Window::geometryChanged, this, &Window::updateTitleBarGeometry);
+    connect(m_titlebar, &WindowTitleBar::requestClose, this, [this] {
+        setVisible(false);
+    });
     updateTitleBarGeometry();
 }
 
@@ -526,6 +607,9 @@ WindowTitleBar::WindowTitleBar(Window *window)
     m_minimizeButton->setColor(Qt::yellow);
     m_closeButton->setColor(Qt::red);
     connect(this, &WindowTitleBar::geometryChanged, this, &WindowTitleBar::updateButtonGeometry);
+    connect(m_closeButton, &Rectangle::mousePressed, this, &WindowTitleBar::requestClose);
+    connect(m_maximizeButton, &Rectangle::mousePressed, this, &WindowTitleBar::requestToggleMaximize);
+    connect(m_minimizeButton, &Rectangle::mousePressed, this, &WindowTitleBar::requestMinimize);
     updateButtonGeometry();
 }
 
@@ -553,7 +637,8 @@ Cursor::Cursor(Node *parent)
     : Node(parent)
 {
     if (m_image.load(":/images/cursor.png")) {
-        m_image = m_image.scaledToWidth(48, Qt::SmoothTransformation);
+        m_image = m_image.scaledToWidth(32, Qt::SmoothTransformation);
+
         setGeometry(m_image.rect());
     }
 }
