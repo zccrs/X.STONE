@@ -5,6 +5,7 @@
 
 #include <QObject>
 #include <QRemoteObjectRegistryHost>
+#include <QPointer>
 
 #include "rep_kernel_source.h"
 
@@ -42,7 +43,7 @@ private:
     void destroy() override;
 
     Window *m_window;
-    Client *m_client;
+    QPointer<Client> m_client;
 };
 
 class Client : public ClientSource
