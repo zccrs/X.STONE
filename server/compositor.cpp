@@ -106,6 +106,7 @@ void Compositor::start()
     m_rootNode = new RootNode(this);
 
     m_cursorNode = new Cursor(m_rootNode);
+    m_cursorNode->setZ(9999);
 
     connect(m_input, &Input::cursorPositionChanged, m_cursorNode, [this] {
         m_cursorNode->move(m_input->cursorPosition());
@@ -292,6 +293,19 @@ void Node::setVisible(bool newVisible)
     update(wholeRect());
 }
 
+int Node::z() const
+{
+    return m_z;
+}
+
+void Node::setZ(int newZ)
+{
+    if (m_z == newZ)
+        return;
+    m_z = newZ;
+    emit zChanged();
+}
+
 void Node::paint(QPainter *pa)
 {
     for (auto child : m_orderedChildren) {
@@ -324,6 +338,7 @@ void Node::addChild(Node *child)
 
     Q_ASSERT(!m_orderedChildren.contains(child));
     m_orderedChildren.append(child);
+    sortChild(child);
 
     connect(child, &Node::destroyed, this, [this, child] {
         removeChild(child);
@@ -339,6 +354,10 @@ void Node::addChild(Node *child)
         update(dirtyRegion);
     });
 
+    connect(child, &Node::zChanged, this, [this, child] {
+        sortChild(child);
+    });
+
     if (child->isVisible())
         update(child->wholeGeometry());
 }
@@ -352,6 +371,47 @@ void Node::removeChild(Node *child)
     if (child->isVisible())
         update(child->wholeGeometry());
 }
+
+void Node::sortChild(Node *child)
+{
+    if (m_orderedChildren.count() == 1)
+        return;
+
+    int index = m_orderedChildren.indexOf(child);
+    Q_ASSERT(index >= 0);
+
+    int newIndex = index;
+    for (int i = index + 1; i < m_orderedChildren.size(); ++i) {
+        if (child->z() > m_orderedChildren.at(i)->z())
+            newIndex = i + 1;
+        else
+            break;
+    }
+
+    if (newIndex != index) {
+        // index < newIndex，因此不用担心插入对象导致 index 失效
+        m_orderedChildren.insert(newIndex, child);
+        // 必须在insert之后调用
+        m_orderedChildren.removeAt(index);
+        return;
+    }
+
+    for (int i = index - 1; i >= 0; --i) {
+        if (child->z() < m_orderedChildren.at(i)->z())
+            newIndex = i;
+        else
+            break;
+    }
+
+    if (newIndex != index) {
+        // index > newIndex，因此为避免index失效，先移除对象
+        m_orderedChildren.removeAt(index);
+        // 必须在removeAt之后调用
+        m_orderedChildren.insert(newIndex, child);
+        return;
+    }
+}
+
 
 Window::Window(Node *parent)
     : Node(parent)

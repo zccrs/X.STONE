@@ -19,6 +19,7 @@ class Node : public QObject
     Q_OBJECT
     Q_PROPERTY(QRect geometry READ geometry WRITE setGeometry NOTIFY geometryChanged FINAL)
     Q_PROPERTY(bool visible READ isVisible WRITE setVisible NOTIFY visibleChanged FINAL)
+    Q_PROPERTY(int z READ z WRITE setZ NOTIFY zChanged FINAL)
 
 public:
     explicit Node(Node *parent = nullptr);
@@ -34,9 +35,13 @@ public:
     bool isVisible() const;
     void setVisible(bool newVisible);
 
+    int z() const;
+    void setZ(int newZ);
+
 signals:
     void geometryChanged(QRect oldGeometry, QRect newGeometry);
     void visibleChanged(bool newVisible);
+    void zChanged();
 
 protected:
     virtual void paint(QPainter *pa);
@@ -44,11 +49,13 @@ protected:
 
     void addChild(Node *child);
     void removeChild(Node *child);
+    void sortChild(Node *child);
 
 private:
     QRect m_geometry = QRect(0, 0, 100, 100);
     QList<Node*> m_orderedChildren;
     bool m_visible = true;
+    int m_z = 0;
 };
 
 class WindowTitleBar;
