@@ -145,6 +145,9 @@ Surface::Surface(Window *window, Client *client, Protocol *parent)
 {
     connect(window, &Window::geometryChanged, this, &Surface::geometryChanged);
     connect(window, &Window::visibleChanged, this, &Surface::visibleChanged);
+    connect(window, &Window::mouseEvent, this, &Surface::mouseEvent);
+    connect(window, &Window::wheelEvent, this, &Surface::wheelEvent);
+    connect(window, &Window::keyEvent, this, &Surface::keyEvent);
 
     setObjectName(getID(this));
     parent->m_node.enableRemoting(this, objectName());

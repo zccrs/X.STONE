@@ -15,6 +15,7 @@ class Client
 #include <QColor>
 #include <QRegion>
 #include <QPair>
+#include <QMouseEvent>
 class Surface
 {
     PROP(QRect geometry READWRITE);
@@ -29,4 +30,8 @@ class Surface
     SLOT(QPair<QString, QSize> getShm());
     SLOT(releaseShm(QString));
     SLOT(bool putImage(QString, QRegion));
+
+    SIGNAL(mouseEvent(QEvent::Type, QPoint, QPoint, Qt::MouseButton, Qt::MouseButtons, Qt::KeyboardModifiers));
+    SIGNAL(wheelEvent(QPoint, QPoint, QPoint, Qt::MouseButtons, Qt::KeyboardModifiers));
+    SIGNAL(keyEvent(QEvent::Type, int, Qt::KeyboardModifiers, QString));
 }

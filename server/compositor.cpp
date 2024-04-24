@@ -250,6 +250,20 @@ void Compositor::paint()
     paint({});
 }
 
+void Compositor::setFocusWindow(Window *window)
+{
+    if (m_focusWindow == window)
+        return;
+
+    if (m_focusWindow)
+        m_focusWindow->setZ(0);
+
+    m_focusWindow = window;
+
+    if (m_focusWindow)
+        m_focusWindow->setZ(1);
+}
+
 QColor Compositor::background() const
 {
     return m_background;
@@ -283,11 +297,22 @@ void Compositor::markDirty(const QRegion &region)
 void Compositor::addWindow(Window *window)
 {
     m_rootNode->addChild(window);
+    connect(window, &Window::mousePressed, this, [this, window] {
+        setFocusWindow(window);
+    });
+    setFocusWindow(window);
 }
 
 void Compositor::removeWindow(Window *window)
 {
+    window->disconnect(this);
     m_rootNode->removeChild(window);
+
+    if (m_focusWindow == window) {
+        setFocusWindow(m_rootNode->m_orderedChildren.isEmpty()
+                           ? nullptr
+                           : qobject_cast<Window*>(m_rootNode->m_orderedChildren.last()));
+    }
 }
 
 Node::Node(Node *parent)
@@ -488,6 +513,7 @@ void Node::addChild(Node *child)
 
     connect(child, &Node::zChanged, this, [this, child] {
         sortChild(child);
+        update(child->wholeGeometry());
     });
 
     if (child->isVisible())
@@ -505,10 +531,10 @@ void Node::removeChild(Node *child)
         update(child->wholeGeometry());
 }
 
-void Node::sortChild(Node *child)
+bool Node::sortChild(Node *child)
 {
     if (m_orderedChildren.count() == 1)
-        return;
+        return false;
 
     int index = m_orderedChildren.indexOf(child);
     Q_ASSERT(index >= 0);
@@ -526,7 +552,7 @@ void Node::sortChild(Node *child)
         m_orderedChildren.insert(newIndex, child);
         // 必须在insert之后调用
         m_orderedChildren.removeAt(index);
-        return;
+        return true;
     }
 
     for (int i = index - 1; i >= 0; --i) {
@@ -541,8 +567,10 @@ void Node::sortChild(Node *child)
         m_orderedChildren.removeAt(index);
         // 必须在removeAt之后调用
         m_orderedChildren.insert(newIndex, child);
-        return;
+        return true;
     }
+
+    return false;
 }
 
 
@@ -698,6 +726,34 @@ bool Window::putImage(const QString &nativeKey, QRegion region)
 void Window::paint(QPainter *pa)
 {
     pa->drawImage(rect(), m_buffer);
+}
+
+bool Window::event(QEvent *event)
+{
+    switch (event->type()) {
+    case QEvent::MouseButtonPress: Q_FALLTHROUGH();
+    case QEvent::MouseButtonRelease: Q_FALLTHROUGH();
+    case QEvent::MouseMove: {
+        auto ev = static_cast<QMouseEvent*>(event);
+        emit mouseEvent(event->type(), ev->position().toPoint(), ev->globalPosition().toPoint(),
+                        ev->button(), ev->buttons(), ev->modifiers());
+        break;
+    }
+    case QEvent::KeyPress: Q_FALLTHROUGH();
+    case QEvent::KeyRelease: {
+        auto ev = static_cast<QKeyEvent*>(event);
+        emit keyEvent(ev->type(), ev->key(), ev->modifiers(), ev->text());
+        break;
+    }
+    case QEvent::Wheel: {
+        auto ev = static_cast<QWheelEvent*>(event);
+        emit wheelEvent(ev->position().toPoint(), ev->globalPosition().toPoint(),
+                        ev->angleDelta(), ev->buttons(), ev->modifiers());
+        break;
+    }
+    }
+
+    return Node::event(event);
 }
 
 void Window::onGeometryChanged()

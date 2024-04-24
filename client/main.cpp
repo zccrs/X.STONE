@@ -110,15 +110,16 @@ int main(int argc, char **argv)
     qDebug() << "New Surface:" << surfaceID.returnValue();
     std::unique_ptr<SurfaceReplica> surface(node.acquire<SurfaceReplica>(surfaceID.returnValue()));
     surface->waitForSource();
-    surface->setGeometry(QRect(100, 100, 600, 400));
     surface->setVisible(true);
 
     if (cmParser.isSet(useShm)) {
+        surface->setGeometry(QRect(100, 100, 600, 400));
         QObject::connect(surface.get(), &SurfaceReplica::geometryChanged, [&] {
             paintWithShm(surface.get());
         });
         paintWithShm(surface.get());
     } else {
+        surface->setGeometry(QRect(500, 500, 300, 200));
         QObject::connect(surface.get(), &SurfaceReplica::geometryChanged, [&] {
             paintButton(surface.get());
         });

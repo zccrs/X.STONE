@@ -10,6 +10,7 @@
 #include <QPointer>
 #include <QPainter>
 #include <QSharedMemory>
+#include <QEvent>
 
 QT_BEGIN_NAMESPACE
 class QFbVtHandler;
@@ -62,7 +63,7 @@ protected:
 
     void addChild(Node *child);
     void removeChild(Node *child);
-    void sortChild(Node *child);
+    bool sortChild(Node *child);
 
 private:
     QRect m_geometry = QRect(0, 0, 100, 100);
@@ -102,9 +103,17 @@ public:
 
 signals:
     void stateChanged();
+    void mouseEvent(QEvent::Type type, QPoint local, QPoint global,
+                    Qt::MouseButton button, Qt::MouseButtons buttons,
+                    Qt::KeyboardModifiers modifiers);
+    void wheelEvent(QPoint local, QPoint global, QPoint angleDelta,
+                    Qt::MouseButtons button, Qt::KeyboardModifiers modifiers);
+    void keyEvent(QEvent::Type type, int qtkey, Qt::KeyboardModifiers modifiers,
+                  QString text);
 
 private:
     void paint(QPainter *pa) override;
+    bool event(QEvent *event) override;
     void onGeometryChanged();
     void updateTitleBarGeometry();
     void updateBuffers();
@@ -215,6 +224,7 @@ signals:
 private:
     void paint(const QRegion &region);
     void paint();
+    void setFocusWindow(Window *window);
 
     QFbVtHandler *m_vtHandler = nullptr;
     Input *m_input = nullptr;
