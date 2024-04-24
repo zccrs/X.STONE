@@ -106,8 +106,10 @@ QString Client::createSurface()
 
 void Client::doPing()
 {
+// #ifdef QT_NO_DEBUG
     pingTimer = startTimer(std::chrono::seconds(1));
     emit ClientSource::ping();
+// #endif
 }
 
 void Client::pong()
