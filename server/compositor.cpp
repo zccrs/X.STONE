@@ -3,9 +3,10 @@
 
 #include "compositor.h"
 #include "output.h"
+#include "virtualoutput.h"
 #include "input.h"
 
-#include <QCoreApplication>
+#include <QGuiApplication>
 #include <QEvent>
 #include <QKeyEvent>
 #include <QPainter>
@@ -124,11 +125,23 @@ void Compositor::start()
         m_outputs << o;
     }
 
-    if (m_outputs.isEmpty())
-        qFatal("No valid framebuffer.");
+    if (m_outputs.isEmpty()) {
+        qWarning("No valid framebuffer.");
 
-    auto primaryOutput = m_outputs.first();
-    m_input->setCursorBoundsRect(primaryOutput->rect());
+        if (qGuiApp->platformName() == "offscreen") {
+            qGuiApp->exit(-1);
+        }
+
+        qDebug() << "fallback to virtual output.";
+
+        m_virtualOutput.reset(new VirtualOutput());
+        m_virtualOutput->resize(1280, 800);
+        m_virtualOutput->show();
+    }
+
+    auto primaryOutput = m_outputs.isEmpty() ? nullptr : m_outputs.first();
+    const QRect bufferRect = m_virtualOutput ? m_virtualOutput->rect() : primaryOutput->rect();
+    m_input->setCursorBoundsRect(bufferRect);
 
     Q_ASSERT(!m_rootNode);
     m_rootNode = new RootNode(this);
@@ -140,12 +153,9 @@ void Compositor::start()
         m_cursorNode->move(m_input->cursorPosition());
     });
 
-    m_input->setCursorPosition(m_outputs.first()->rect().center());
-    m_buffer = *primaryOutput;
-    m_buffer.detach();
-
-    if (!primaryOutput->isNull())
-        Q_ASSERT(!m_buffer.isNull());
+    m_input->setCursorPosition(bufferRect.center());
+    m_buffer = QImage(bufferRect.size(),
+                      m_virtualOutput ? QImage::Format_RGB888 : primaryOutput->format());
 
     paint();
 }
@@ -153,7 +163,7 @@ void Compositor::start()
 void Compositor::paint(const QRegion &region)
 {
     Q_ASSERT(!m_painting);
-    if (m_outputs.isEmpty())
+    if (m_outputs.isEmpty() && !m_virtualOutput)
         return;
 
     if (m_buffer.isNull())
@@ -226,6 +236,10 @@ void Compositor::paint(const QRegion &region)
                 pa.drawImage(mapToOutput.mapRect(r), m_buffer, r);
             }
         }
+    }
+
+    if (m_virtualOutput) {
+        m_virtualOutput->setImage(&m_buffer);
     }
 
     m_painting = false;

@@ -1,4 +1,5 @@
-QT       += gui remoteobjects core-private fb_support-private
+QT       += gui remoteobjects core-private fb_support-private \
+    widgets
 equals(QT_MAJOR_VERSION, 5): QT += xkbcommon_support-private
 
 CONFIG += link_pkgconfig
@@ -10,14 +11,16 @@ HEADERS += \
     compositor.h \
     input.h \
     output.h \
-    protocol.h
+    protocol.h \
+    virtualoutput.h
 
 SOURCES += \
     compositor.cpp \
     input.cpp \
     main.cpp \
     output.cpp \
-    protocol.cpp
+    protocol.cpp \
+    virtualoutput.cpp
 
 RESOURCES += \
     images.qrc

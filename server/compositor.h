@@ -162,6 +162,7 @@ private:
 
 class Input;
 class Output;
+class VirtualOutput;
 class Compositor : public QObject
 {
     friend class InputEventManager;
@@ -194,6 +195,8 @@ private:
     QFbVtHandler *m_vtHandler = nullptr;
     Input *m_input = nullptr;
     QList<Output*> m_outputs;
+    // for debug
+    std::unique_ptr<VirtualOutput> m_virtualOutput;
 
     QImage m_buffer;
     bool m_painting = false;
