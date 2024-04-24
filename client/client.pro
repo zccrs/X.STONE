@@ -1,4 +1,4 @@
-QT       += core gui remoteobjects
+QT       += gui remoteobjects
 
 REPC_REPLICA = ../protocols/kernel.rep
 

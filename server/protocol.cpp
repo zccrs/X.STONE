@@ -205,3 +205,18 @@ void Surface::end()
 {
     m_window->end();
 }
+
+QPair<QString, QSize> Surface::getShm()
+{
+    return m_window->getShm();
+}
+
+void Surface::releaseShm(QString key)
+{
+    m_window->releaseShm(key);
+}
+
+bool Surface::putImage(QString key, QRegion region)
+{
+    return m_window->putImage(key, region);
+}

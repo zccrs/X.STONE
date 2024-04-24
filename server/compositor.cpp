@@ -638,6 +638,63 @@ void Window::end()
     update(tmp);
 }
 
+QPair<QString, QSize> Window::getShm()
+{
+    QSharedMemory *shm = nullptr;
+    if (m_shmList.isEmpty() || m_shmList.last()->property("_image_size").toSize() != m_buffer.size()) {
+        shm = new QSharedMemory(this);
+        QNativeIpcKey key(QString::number(reinterpret_cast<quintptr>(shm), 16));
+        shm->setNativeKey(key);
+        qDebug() << "Create shared memory with key:" << key.toString();
+
+        if (!shm->create(m_buffer.sizeInBytes())) {
+            qWarning() << "Can't create shared memory:" << shm->errorString();
+            shm->deleteLater();
+            return {};
+        }
+
+        shm->setProperty("_image_size", m_buffer.size());
+        m_shmList.append(shm);
+    }
+
+    return {m_shmList.last()->nativeKey(), m_buffer.size()};
+}
+
+void Window::releaseShm(const QString &nativeKey)
+{
+    if (auto shm = getShm(nativeKey)) {
+        shm->deleteLater();
+        m_shmList.removeOne(shm);
+    }
+}
+
+bool Window::putImage(const QString &nativeKey, QRegion region)
+{
+    auto shm = getShm(nativeKey);
+    if (!shm)
+        return false;
+
+    if (!shm->lock())
+        return false;
+
+    if (region.isEmpty())
+        region += rect();
+
+    const QSize size = shm->property("_image_size").toSize();
+    QImage tmpImage(reinterpret_cast<uchar*>(shm->data()), size.width(), size.height(), m_buffer.format());
+
+    m_painter.begin(&m_buffer);
+    for (QRect r : region) {
+        m_painter.drawImage(r, tmpImage, r);
+    }
+    m_painter.end();
+
+    shm->unlock();
+
+    update(region);
+    return true;
+}
+
 void Window::paint(QPainter *pa)
 {
     pa->drawImage(rect(), m_buffer);
@@ -672,6 +729,15 @@ void Window::updateBuffers()
     m_buffer = QImage(size, QImage::Format_RGB888);
     m_buffer.fill(Qt::black);
     m_bgBuffer = m_buffer;
+}
+
+QSharedMemory *Window::getShm(const QString &nativeKey) const
+{
+    for (auto shm : m_shmList)
+        if (shm->nativeKey() == nativeKey)
+            return shm;
+
+    return nullptr;
 }
 
 Rectangle::Rectangle(Node *parent)

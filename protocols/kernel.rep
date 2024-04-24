@@ -13,6 +13,8 @@ class Client
 
 #include <QRect>
 #include <QColor>
+#include <QRegion>
+#include <QPair>
 class Surface
 {
     PROP(QRect geometry READWRITE);
@@ -23,4 +25,8 @@ class Surface
     SLOT(fillRect(QRect, QColor));
     SLOT(drawText(QPoint, QString, QColor));
     SLOT(end());
+
+    SLOT(QPair<QString, QSize> getShm());
+    SLOT(releaseShm(QString));
+    SLOT(bool putImage(QString, QRegion));
 }

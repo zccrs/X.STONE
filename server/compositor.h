@@ -9,6 +9,7 @@
 #include <QImage>
 #include <QPointer>
 #include <QPainter>
+#include <QSharedMemory>
 
 QT_BEGIN_NAMESPACE
 class QFbVtHandler;
@@ -88,10 +89,16 @@ public:
     Window::State state() const;
     void setState(State newState);
 
+    // for render
     bool begin();
     void fillRect(QRect rect, QColor color);
     void drawText(QPoint pos, QString text, QColor color);
     void end();
+
+    // for shm
+    QPair<QString, QSize> getShm();
+    void releaseShm(const QString &nativeKey);
+    bool putImage(const QString &nativeKey, QRegion region);
 
 signals:
     void stateChanged();
@@ -101,12 +108,15 @@ private:
     void onGeometryChanged();
     void updateTitleBarGeometry();
     void updateBuffers();
+    QSharedMemory *getShm(const QString &nativeKey) const;
 
     QImage m_buffer;
+    // for render
     QImage m_bgBuffer;
     QRegion m_damage;
-    // for render
     QPainter m_painter;
+    // for shm
+    QList<QSharedMemory*> m_shmList;
 
     State m_state;
     WindowTitleBar *m_titlebar;

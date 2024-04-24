@@ -48,6 +48,11 @@ private:
     void drawText(QPoint pos, QString text, QColor color) override;
     void end() override;
 
+    // for shm paint
+    QPair<QString, QSize> getShm() override;
+    void releaseShm(QString key) override;
+    bool putImage(QString key, QRegion region) override;
+
     Window *m_window;
     QPointer<Client> m_client;
 };
