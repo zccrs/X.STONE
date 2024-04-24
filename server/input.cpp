@@ -59,7 +59,7 @@ Input::Input(QObject *parent)
 
     libinput_log_set_handler(m_li, liLogHandler);
 #ifndef QT_NO_DEBUG
-    libinput_log_set_priority(m_li, LIBINPUT_LOG_PRIORITY_DEBUG);
+    libinput_log_set_priority(m_li, LIBINPUT_LOG_PRIORITY_INFO);
 #endif
 
     if (Q_UNLIKELY(libinput_udev_assign_seat(m_li, "seat0")))

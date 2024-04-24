@@ -42,6 +42,12 @@ public:
 private:
     void destroy() override;
 
+    // for render
+    bool begin() override;
+    void fillRect(QRect rect, QColor color) override;
+    void drawText(QPoint pos, QString text, QColor color) override;
+    void end() override;
+
     Window *m_window;
     QPointer<Client> m_client;
 };

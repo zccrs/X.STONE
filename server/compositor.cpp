@@ -132,7 +132,7 @@ void Compositor::start()
             qGuiApp->exit(-1);
         }
 
-        qDebug() << "fallback to virtual output.";
+        qDebug() << "Fallback to virtual output.";
 
         m_virtualOutput.reset(new VirtualOutput());
         m_virtualOutput->resize(1280, 800);
@@ -273,7 +273,7 @@ void Compositor::setWallpaper(const QImage &image)
 
 void Compositor::markDirty(const QRegion &region)
 {
-    qDebug() << "Dirty" << region;
+    // qDebug() << "Dirty" << region;
 
     if (m_painting)
         return;
@@ -446,7 +446,8 @@ void Node::update(QRegion region, bool force)
     if (!isVisible() && !force)
         return;
 
-    qDebug() << this << "request update" << region;
+    if (!qobject_cast<Cursor*>(this))
+        qDebug() << this << "request update" << region;
 
     if (auto parentNode = this->parentNode())
         parentNode->update(region.translated(geometry().topLeft()));
@@ -549,11 +550,12 @@ Window::Window(Node *parent)
     : Node(parent)
     , m_titlebar(new WindowTitleBar(this))
 {
-    connect(this, &Window::geometryChanged, this, &Window::updateTitleBarGeometry);
+    setVisible(false);
+    connect(this, &Window::geometryChanged, this, &Window::onGeometryChanged);
     connect(m_titlebar, &WindowTitleBar::requestClose, this, [this] {
         setVisible(false);
     });
-    updateTitleBarGeometry();
+    onGeometryChanged();
 }
 
 Window::State Window::state() const
@@ -570,9 +572,81 @@ void Window::setState(State newState)
     update(rect());
 }
 
+// for render
+bool Window::begin()
+{
+    if (m_bgBuffer.isNull())
+        return false;
+
+    if (m_painter.isActive())
+        return true;
+
+    Q_ASSERT(m_damage.isEmpty());
+    bool ok = m_painter.begin(&m_bgBuffer);
+
+    if (ok)
+        qDebug() << "Paint request from client" << this;
+
+    return ok;
+}
+
+void Window::fillRect(QRect rect, QColor color)
+{
+    if (!m_painter.isActive())
+        return;
+
+    m_damage += rect;
+    m_painter.fillRect(rect, color);
+}
+
+void Window::drawText(QPoint pos, QString text, QColor color)
+{
+    if (!m_painter.isActive())
+        return;
+
+    QRect textRect = m_painter.boundingRect(pos.x(), pos.y(),
+                                            rect().width() - pos.x(),
+                                            rect().height() - pos.y(),
+                                            0, text);
+
+    m_damage += textRect;
+    m_painter.setBrush(Qt::NoBrush);
+    m_painter.setPen(color);
+    m_painter.drawText(textRect, text);
+}
+
+void Window::end()
+{
+    if (!m_painter.isActive())
+        return;
+
+    m_painter.end();
+
+    if (m_damage.isEmpty())
+        return;
+
+    m_painter.begin(&m_buffer);
+    for (QRect r : m_damage) {
+        m_painter.drawImage(r, m_bgBuffer, r);
+    }
+
+    QRegion tmp;
+    m_damage.swap(tmp);
+
+    qDebug() << "Damage by client" << tmp;
+
+    update(tmp);
+}
+
 void Window::paint(QPainter *pa)
 {
-    pa->fillRect(rect(), Qt::blue);
+    pa->drawImage(rect(), m_buffer);
+}
+
+void Window::onGeometryChanged()
+{
+    updateTitleBarGeometry();
+    updateBuffers();
 }
 
 void Window::updateTitleBarGeometry()
@@ -584,6 +658,20 @@ void Window::updateTitleBarGeometry()
     rect.moveBottomLeft(QPoint(0, 0));
 
     m_titlebar->setGeometry(rect);
+}
+
+void Window::updateBuffers()
+{
+    const QSize size = geometry().size();
+    if (size.isEmpty()) {
+        m_buffer = QImage();
+        m_bgBuffer = m_buffer;
+        return;
+    }
+
+    m_buffer = QImage(size, QImage::Format_RGB888);
+    m_buffer.fill(Qt::black);
+    m_bgBuffer = m_buffer;
 }
 
 Rectangle::Rectangle(Node *parent)

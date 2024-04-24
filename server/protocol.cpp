@@ -8,6 +8,7 @@
 #include <QLocalSocket>
 #include <QTimer>
 #include <QTimerEvent>
+#include <QDebug>
 
 Protocol::Protocol(QObject *parent)
     : QObject{parent}
@@ -182,4 +183,25 @@ void Surface::destroy()
         m_window->deleteLater();
         m_window = nullptr;
     }
+}
+
+bool Surface::begin()
+{
+    bool ok = m_window->begin();
+    return ok;
+}
+
+void Surface::fillRect(QRect rect, QColor color)
+{
+    m_window->fillRect(rect, color);
+}
+
+void Surface::drawText(QPoint pos, QString text, QColor color)
+{
+    m_window->drawText(pos, text, color);
+}
+
+void Surface::end()
+{
+    m_window->end();
 }

@@ -12,9 +12,15 @@ class Client
 };
 
 #include <QRect>
+#include <QColor>
 class Surface
 {
     PROP(QRect geometry READWRITE);
     PROP(bool visible READWRITE);
     SLOT(destroy());
+
+    SLOT(bool begin());
+    SLOT(fillRect(QRect, QColor));
+    SLOT(drawText(QPoint, QString, QColor));
+    SLOT(end());
 }

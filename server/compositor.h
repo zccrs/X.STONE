@@ -8,6 +8,7 @@
 #include <QRect>
 #include <QImage>
 #include <QPointer>
+#include <QPainter>
 
 QT_BEGIN_NAMESPACE
 class QFbVtHandler;
@@ -87,12 +88,25 @@ public:
     Window::State state() const;
     void setState(State newState);
 
+    bool begin();
+    void fillRect(QRect rect, QColor color);
+    void drawText(QPoint pos, QString text, QColor color);
+    void end();
+
 signals:
     void stateChanged();
 
 private:
     void paint(QPainter *pa) override;
+    void onGeometryChanged();
     void updateTitleBarGeometry();
+    void updateBuffers();
+
+    QImage m_buffer;
+    QImage m_bgBuffer;
+    QRegion m_damage;
+    // for render
+    QPainter m_painter;
 
     State m_state;
     WindowTitleBar *m_titlebar;
